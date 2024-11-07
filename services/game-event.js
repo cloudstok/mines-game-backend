@@ -1,4 +1,4 @@
-import {cashOutAmount, cashOutPartial, createGameData, revealCells} from "../module/bets/bet-session.js";
+import {cashOutAmount, createGameData, revealCells} from "../module/bets/bet-session.js";
 import { appConfig } from "../utilities/app-config.js";
 import { generateUUIDv7 } from "../utilities/common-function.js";
 import { getCache, deleteCache, setCache } from "../utilities/redis-connection.js";
@@ -7,7 +7,6 @@ import { logEventAndEmitResponse, MinesData } from "../utilities/helper-function
 const gameLogger = createLogger('Game', 'jsonl');
 const betLogger = createLogger('Bets', 'jsonl');
 const cashoutLogger = createLogger('Cashout', 'jsonl');
-const partialCashoutLogger = createLogger('PartialCashout', 'jsonl');
 const cachedGameLogger = createLogger('cachedGame', 'jsonl');
 
 const getPlayerDetailsAndGame = async (socket) => {
