@@ -42,9 +42,6 @@ export const revealCells = async (game, playerDetails, row, col, socket) => {
     if(playerGrid[row][col].revealed) return socket.emit('betError', 'Block is already revealed');
     if(playerGrid[row][col].isMine){
         await deleteCache(`GM:${playerDetails.id}`);
-        game.playerGrid[row][col].revealed = true;
-        game.revealedCells.push(`${row}:${col}`);
-        game.revealedCellCount++;
         await insertSettlement({
             roundId: game.matchId,
             matchId: game.lobbyId,
