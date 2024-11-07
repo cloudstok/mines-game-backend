@@ -1,4 +1,4 @@
-import { appConfig } from "./app-config.js";
+import { variableConfig } from "./load-config.js";
 import { createLogger } from "./logger.js";
 const failedBetLogger = createLogger('failedBets', 'jsonl');
 const failedPartialCashoutLogger = createLogger('failedPartialCashout', 'jsonl');
@@ -22,7 +22,7 @@ export const logEventAndEmitResponse = (req, res, event, socket) => {
 }
 
 export const generateGrid = (mineCount) => {
-  const size = appConfig.boardSize || 5;
+  const size = Number(variableConfig.boardSize) || 5;
   const grid = Array.from({ length: size }, () =>
     Array.from({ length: size }, () => ({
       isMine: false,
@@ -46,7 +46,7 @@ export const generateGrid = (mineCount) => {
   return grid;
 }
 
-export const MinesData = {
+const defaultData = {
   1: 1.01,
   2: 1.05,
   3: 1.10,
@@ -73,6 +73,8 @@ export const MinesData = {
   24: 24.25,
   25: 29.25,
 }
+
+export const MinesData = variableConfig.mineData || defaultData;
 
 export const getNextMultiplier = (mineCount) => {
   return MinesData[mineCount];
