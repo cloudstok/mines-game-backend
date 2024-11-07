@@ -1,46 +1,16 @@
 import { appConfig } from "../../utilities/app-config.js";
 import { updateBalanceFromAccount } from "../../utilities/common-function.js";
-import { generateGrid } from "../../utilities/helper-function.js";
+import { generateGrid, getNextMultiplier } from "../../utilities/helper-function.js";
 import { setCache, deleteCache } from "../../utilities/redis-connection.js";
 import { insertSettlement } from "./bet-db.js";
 
-export const createGameData = (matchId, betAmount, mineCount) => {
-    const gameData = {
-        matchId: matchId,
-        bank: 0,
-        multiplier: 0,
-        bet: betAmount,
-        playerGrid: generateGrid(mineCount),
-        revealedCells: []
-    }
-    return gameData;
-}
-
-
-export const calculatePayout = (section, game) => {
-    if (section === "green" && game.green.length > game.multipliers.green.length) return 7.5;
-    if (section === "orange" && game.orange.length > game.multipliers.orange.length) return 21.0;
-    if (section === "purple" && game.purple.length > game.multipliers.purple.length) {
-        const bonusMultiplier = game.bonusMultipliers[Math.floor(Math.random() * game.bonusMultipliers.length)];
-        return bonusMultiplier;
-    }
-    return 0;
-}
-
-const dynamicSubtraction = (arr) => {
-    return arr.length > 1 ? arr[arr.length - 1] - arr[arr.length - 2] : arr[0] || null;
-}
-
-export const spinGem = async (game, playerDetails, socket, io) => {
-    const [roundPrefix, roundNumber] = game.roundId.split('_');
-    game.roundId = `${roundPrefix}_${Number(roundNumber) + 1}`;
-
+export const createGameData = async(matchId, betAmount, mineCount, playerDetails, socket) => {
     const userIP = socket.handshake.headers?.['x-forwarded-for']?.split(',')[0].trim() || socket.handshake.address;
     const playerId = playerDetails.id.split(':')[1];
 
     const updateBalanceData = {
-        id: game.roundId,
-        bet_amount: game.bet,
+        id: matchId,
+        bet_amount: betAmount,
         socket_id: playerDetails.socketId,
         user_id: playerId,
         ip: userIP
@@ -49,98 +19,57 @@ export const spinGem = async (game, playerDetails, socket, io) => {
     const transaction = await updateBalanceFromAccount(updateBalanceData, "DEBIT", playerDetails);
     if (!transaction) return socket.emit('betError', 'Bet Cancelled by Upstream');
 
-    playerDetails.balance = (playerDetails.balance - game.bet).toFixed(2);
+    playerDetails.balance = (playerDetails.balance - betAmount).toFixed(2);
     await setCache(`PL:${playerDetails.socketId}`, JSON.stringify(playerDetails));
     socket.emit('info', { user_id: playerDetails.userId, operator_id: playerDetails.operatorId, balance: playerDetails.balance });
 
-    game.txn_id = transaction.txn_id;
-    game.darkGem = game.stone = false;
-    game.result = '';
-    let currentMultiplier = 0;
-    const spinResult = Math.random();
-
-    if (spinResult > 0.5) {
-        const section = spinResult < 0.7 ? "green" : spinResult < 0.9 ? "orange" : "purple";
-        game.result = section;
-
-        const sectionFilled = game[section].length === game.multipliers[section].length;
-        const multiplier = sectionFilled ? game[section][game[section].length - 1] : game.multipliers[section][game[section].length];
-
-        game[section].push(multiplier);
-        currentMultiplier = dynamicSubtraction(game[section]);
-
-        const payout = calculatePayout(section, game);
-        if (payout) {
-            currentMultiplier = payout;
-            game[section].pop();
-            if (section == 'purple') {
-                game.bank -= game.bet * game[section][game[section].length - 1];
-                game[section] = [];
-            }
-
-            const winAmount = Math.min(game.bet * currentMultiplier, appConfig.maxCashoutAmount).toFixed(2);
-            const creditData = { id: game.roundId, winning_amount: winAmount, socket_id: playerDetails.socketId, txn_id: game.txn_id, user_id: playerId, ip: userIP };
-            const creditTransaction = await updateBalanceFromAccount(creditData, "CREDIT", playerDetails);
-
-            if (!creditTransaction) console.error(`Credit failed for user: ${playerDetails.userId} for round ${game.roundId}`);
-            playerDetails.balance = (Number(playerDetails.balance) + Number(winAmount)).toFixed(2);
-
-            await setCache(`PL:${playerDetails.socketId}`, JSON.stringify(playerDetails));
-            socket.emit('info', { user_id: playerDetails.userId, operator_id: playerDetails.operatorId, balance: playerDetails.balance });
-        }
-    } else if (spinResult > 0.3) {
-        game.darkGem = true;
-        game.bank -= game.bet;
-    } else {
-        ["green", "orange", "purple"].forEach(section => {
-            if (game[section].length) {
-                currentMultiplier -= game[section].at(-1);
-                game[section].pop();
-            }
-        });
-        game.stone = true;
+    const gameData = {
+        matchId: matchId,
+        lobbyId: Date.now(),
+        bank: 0.00,
+        bet: betAmount,
+        playerGrid: generateGrid(mineCount),
+        revealedCells: [],
+        revealedCellCount : mineCount,
+        txn_id : transaction.txn_id 
     }
+    return gameData;
+}
 
-    //Insert Settlement into Database
-    await insertSettlement({
-        roundId: game.roundId,
-        matchId: game.matchId,
-        userId: playerDetails.userId,
-        operatorId: playerDetails.operatorId,
-        bet_amount: Number(game.bet),
-        max_mult: currentMultiplier,
-        status: currentMultiplier > 0 ? 'WIN' : 'LOSS'
-    });
-
-    const isAllSectionsEmpty = [game.green, game.orange, game.purple].every(arr => arr.length === 0);
-    if (isAllSectionsEmpty) {
+export const revealCells = async (game, playerDetails, row, col, socket) => {
+    const playerGrid = game.playerGrid;
+    if(!(playerGrid && playerGrid[row][col])) return socket.emit('betError', 'Invalid Row or Column Passed');
+    if(playerGrid[row][col].revealed) return socket.emit('betError', 'Block is already revealed');
+    if(playerGrid[row][col].isMine){
         await deleteCache(`GM:${playerDetails.id}`);
-        game.bank = game.multiplier = 0;
-        game.matchId = '';
-    } else {
-        game.multiplier = ["green", "orange", "purple"].reduce((sum, section) => sum + (game[section].at(-1) || 0), 0);
-        game.bank = game.multiplier * game.bet;
-        await setCache(`GM:${playerDetails.id}`, JSON.stringify(game), 3600);
-    };
-
-    io.emit('bets', {
-        betId: game.roundId,
-        userId: `${playerDetails.userId.slice(0, 2)}**${playerDetails.userId.slice(-2)}`,
-        payout: currentMultiplier,
-        Profit: game.bet * currentMultiplier - game.bet,
-        created_at: new Date()
-    });
-
-    return {
+        game.playerGrid[row][col].revealed = true;
+        game.revealedCells.push(`${row}:${col}`);
+        game.revealedCellCount++;
+        await insertSettlement({
+            roundId: game.matchId,
+            matchId: game.lobbyId,
+            gameData: JSON.stringify(game),
+            userId: playerDetails.userId,
+            operatorId: playerDetails.operatorId,
+            bet_amount: game.bet,
+            max_mult: 0.00,
+            status: 'LOSS'
+        });
+        game.matchId = '', game.bank = 0.00, game.multiplier = 0;
+        return socket.emit('match_ended', game);
+    } 
+    game.playerGrid[row][col].revealed = true;
+    game.revealedCells.push(`${row}:${col}`);
+    game.revealedCellCount++;
+    game.bank = (game.bet * game.multiplier).toFixed(2);
+    game.multiplier = getNextMultiplier(game.revealedCellCount);
+    await setCache(`GM:${playerDetails.id}`);
+    return { 
         matchId: game.matchId,
-        roundId: game.roundId,
         bank: game.bank,
-        sections: { green: game.green, orange: game.orange, purple: game.purple },
-        result: game.result,
-        darkGem: game.darkGem,
-        stone: game.stone,
+        revealedCells: game.revealedCells,
         multiplier: game.multiplier
-    };
+    }
 }
 
 
@@ -148,7 +77,7 @@ export const cashOutAmount = async (game, playerDetails, socket) => {
     const winAmount = Math.min(game.bank, appConfig.maxCashoutAmount).toFixed(2);
     const userIP = socket.handshake.headers?.['x-forwarded-for']?.split(',')[0].trim() || socket.handshake.address;
     const updateBalanceData = {
-        id: game.roundId,
+        id: game.matchId,
         winning_amount: winAmount,
         socket_id: playerDetails.socketId,
         txn_id: game.txn_id,
@@ -161,44 +90,21 @@ export const cashOutAmount = async (game, playerDetails, socket) => {
     await setCache(`PL:${playerDetails.socketId}`, JSON.stringify(playerDetails));
     socket.emit('info', { user_id: playerDetails.userId, operator_id: playerDetails.operatorId, balance: playerDetails.balance });
     await deleteCache(`GM:${playerDetails.id}`);
-    return { payout: winAmount, matchId: '' };
-}
-
-export const cashOutPartial = async (game, playerDetails, socket) => {
-    let partialPayout = 0;
-    ["green", "orange", "purple"].forEach(section => {
-        if (game[section].length) {
-            partialPayout += dynamicSubtraction(game[section]);
-            game[section].pop();
-        }
+    await insertSettlement({
+        roundId: game.matchId,
+        matchId: game.lobbyId,
+        gameData: JSON.stringify(game),
+        userId: playerDetails.userId,
+        operatorId: playerDetails.operatorId,
+        bet_amount: game.bet,
+        max_mult: game.multiplier,
+        status: 'WIN'
     });
-    const winAmount = Number(game.bet) * partialPayout;
-    const finalAmount = Math.min(winAmount, appConfig.maxCashoutAmount).toFixed(2);
-    game.multiplier = ["green", "orange", "purple"].reduce((sum, section) => sum + (game[section].at(-1) || 0), 0);
-    game.bank -= finalAmount;
-    await setCache(`GM:${playerDetails.id}`, JSON.stringify(game), 3600);
-    const userIP = socket.handshake.headers?.['x-forwarded-for']?.split(',')[0].trim() || socket.handshake.address;
-
-    const updateBalanceData = {
-        id: game.roundId,
-        winning_amount: finalAmount,
-        socket_id: playerDetails.socketId,
-        txn_id: game.txn_id,
-        user_id: playerDetails.id.split(':')[1],
-        ip: userIP
-    };
-    const isTransactionSuccessful = await updateBalanceFromAccount(updateBalanceData, "CREDIT", playerDetails);
-    if (!isTransactionSuccessful) console.error(`Credit failed for user: ${playerDetails.userId} for round ${game.roundId}`);
-    playerDetails.balance = (Number(playerDetails.balance) + Number(finalAmount)).toFixed(2);
-    await setCache(`PL:${playerDetails.socketId}`, JSON.stringify(playerDetails));
-    socket.emit('info', { user_id: playerDetails.userId, operator_id: playerDetails.operatorId, balance: playerDetails.balance });
-    if (game.bank <= 0) { game.matchId = ''; deleteCache(`GM:${playerDetails.id}`) };
     return {
-        payout: finalAmount,
-        matchId: game.matchId,
-        roundId: game.roundId,
-        bank: game.bank,
-        sections: { green: game.green, orange: game.orange, purple: game.purple },
+        payout: winAmount,
+        matchId: '',
+        playerGrid: game.playerGrid,
         multiplier: game.multiplier
     };
 }
+
