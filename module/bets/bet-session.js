@@ -1,6 +1,6 @@
 import { appConfig } from "../../utilities/app-config.js";
 import { updateBalanceFromAccount } from "../../utilities/common-function.js";
-import { generateGrid, getNextMultiplier } from "../../utilities/helper-function.js";
+import { countMinesAndRevealed, generateGrid, getNextMultiplier } from "../../utilities/helper-function.js";
 import { setCache, deleteCache } from "../../utilities/redis-connection.js";
 import { insertSettlement } from "./bet-db.js";
 
@@ -17,7 +17,7 @@ export const createGameData = async(matchId, betAmount, mineCount, playerDetails
     };
 
     const transaction = await updateBalanceFromAccount(updateBalanceData, "DEBIT", playerDetails);
-    if (!transaction) return socket.emit('betError', 'Bet Cancelled by Upstream');
+    if (!transaction) return {error: 'Bet Cancelled by Upstream'};
 
     playerDetails.balance = (playerDetails.balance - betAmount).toFixed(2);
     await setCache(`PL:${playerDetails.socketId}`, JSON.stringify(playerDetails));
@@ -26,8 +26,9 @@ export const createGameData = async(matchId, betAmount, mineCount, playerDetails
     const gameData = {
         matchId: matchId,
         lobbyId: Date.now(),
-        bank: 0.00,
+        bank: betAmount,
         bet: betAmount,
+        multiplier: getNextMultiplier((mineCount)),
         playerGrid: generateGrid(mineCount),
         revealedCells: [],
         revealedCellCount : mineCount,
@@ -36,10 +37,10 @@ export const createGameData = async(matchId, betAmount, mineCount, playerDetails
     return gameData;
 }
 
-export const revealCells = async (game, playerDetails, row, col, socket) => {
+export const revealedCells = async (game, playerDetails, row, col, socket) => {
     const playerGrid = game.playerGrid;
-    if(!(playerGrid && playerGrid[row][col])) return socket.emit('betError', 'Invalid Row or Column Passed');
-    if(playerGrid[row][col].revealed) return socket.emit('betError', 'Block is already revealed');
+    if(!(playerGrid && playerGrid[row][col])) return { error: 'Invalid Row or Column Passed'};
+    if(playerGrid[row][col].revealed) return { error: 'Block is already revealed'};
     if(playerGrid[row][col].isMine){
         await deleteCache(`GM:${playerDetails.id}`);
         await insertSettlement({
@@ -53,14 +54,19 @@ export const revealCells = async (game, playerDetails, row, col, socket) => {
             status: 'LOSS'
         });
         game.matchId = '', game.bank = 0.00, game.multiplier = 0;
-        return socket.emit('match_ended', game);
+        return { eventName: 'match_ended',  game};
     } 
     game.playerGrid[row][col].revealed = true;
     game.revealedCells.push(`${row}:${col}`);
     game.revealedCellCount++;
-    game.bank = (game.bet * game.multiplier).toFixed(2);
+    game.bank = (Number(game.bet) * Number(game.multiplier)).toFixed(2);
+    const revealedCountAndMines = countMinesAndRevealed(game.playerGrid);
+    if(revealedCountAndMines == (game.playerGrid.length * game.playerGrid[0].length)){
+        const cashoutData = await cashOutAmount(game, playerDetails, socket);
+        return { eventName: 'cash_out_complete',  cashoutData};
+    }
     game.multiplier = getNextMultiplier(game.revealedCellCount);
-    await setCache(`GM:${playerDetails.id}`);
+    await setCache(`GM:${playerDetails.id}`, JSON.stringify(game), 3600);
     return { 
         matchId: game.matchId,
         bank: game.bank,

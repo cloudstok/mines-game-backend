@@ -22,7 +22,7 @@ export const initSocket = (io)=> {
         await setCache(`PL:${socket.id}`, JSON.stringify({...userData, socketId: socket.id}), 3600);
         emitMinesMultiplier(socket);
         reconnect(socket);
-        registerEvents(io, socket);
+        registerEvents(socket);
         socket.on('error', (error) => {
             console.error(`Socket error: ${socket.id}. Error: ${error.message}`);
         });

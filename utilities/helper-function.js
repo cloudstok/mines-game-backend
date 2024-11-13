@@ -74,8 +74,37 @@ const defaultData = {
   25: 29.25,
 }
 
-export const MinesData = variableConfig.mineData || defaultData;
+export const MinesData = () => {
+  const data = variableConfig.mineData ? JSON.parse(JSON.stringify(variableConfig.mineData)) : defaultData;
+  return data;
+};
 
 export const getNextMultiplier = (mineCount) => {
-  return MinesData[mineCount];
+  const minesData = MinesData();
+  return minesData[mineCount];
+}
+
+export const countMinesAndRevealed = (grid)=> {
+  let count = 0;
+  for (let row of grid) {
+    for (let cell of row) {
+      if (cell.isMine && cell.revealed) {
+        count++;
+      }
+    }
+  }
+  return count;
+}
+
+export const getRandomRowCol = (playerGrids) => {
+  const unrevealedCells = [];
+  for (let row = 0; row < playerGrids.length; row++) {
+    for (let col = 0; col < playerGrids[row].length; col++) {
+      if (!playerGrids[row][col].revealed) {
+        unrevealedCells.push({ row, col });
+      }
+    }
+  }
+
+  return unrevealedCells[Math.floor(Math.random() * unrevealedCells.length)];
 }
