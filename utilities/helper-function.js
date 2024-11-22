@@ -85,10 +85,11 @@ export const getNextMultiplier = (mineCount) => {
 }
 
 export const countMinesAndRevealed = (grid)=> {
+
   let count = 0;
   for (let row of grid) {
     for (let cell of row) {
-      if (cell.isMine && cell.revealed) {
+      if (cell.isMine || cell.revealed) {
         count++;
       }
     }

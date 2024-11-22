@@ -1,6 +1,6 @@
 import { getUserDataFromSource } from './module/players/player-data.js'
 import { registerEvents } from './router/event-route.js';
-import { emitMinesMultiplier, reconnect } from "./services/game-event.js";
+import { emitMinesMultiplier } from "./services/game-event.js";
 import { setCache } from "./utilities/redis-connection.js";
 
 export const initSocket = (io)=> {
@@ -21,7 +21,6 @@ export const initSocket = (io)=> {
         socket.emit('info', { user_id: userData.userId, operator_id: userData.operatorId, balance: Number(userData.balance).toFixed(2)});
         await setCache(`PL:${socket.id}`, JSON.stringify({...userData, socketId: socket.id}), 3600);
         emitMinesMultiplier(socket);
-        reconnect(socket);
         registerEvents(socket);
         socket.on('error', (error) => {
             console.error(`Socket error: ${socket.id}. Error: ${error.message}`);

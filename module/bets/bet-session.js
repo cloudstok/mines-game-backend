@@ -53,7 +53,7 @@ export const revealedCells = async (game, playerDetails, row, col, socket) => {
             max_mult: 0.00,
             status: 'LOSS'
         });
-        game.matchId = '', game.bank = 0.00, game.multiplier = 0;
+        game.matchId = '', game.bank = 0.00, game.multiplier = 0; game.bombPos = `${row}:${col}`
         return { eventName: 'match_ended',  game};
     } 
     game.playerGrid[row][col].revealed = true;

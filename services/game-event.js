@@ -7,7 +7,6 @@ import { getRandomRowCol, logEventAndEmitResponse, MinesData } from "../utilitie
 const gameLogger = createLogger('Game', 'jsonl');
 const betLogger = createLogger('Bets', 'jsonl');
 const cashoutLogger = createLogger('Cashout', 'jsonl');
-const cachedGameLogger = createLogger('cachedGame', 'jsonl');
 const timers = new Map();
 
 const getPlayerDetailsAndGame = async (socket) => {
@@ -35,7 +34,7 @@ const registerTimer = async(playerId, matchId, socket) => {
     timers.set(timerKey, timerId);
 };
 
-const clearTimer = async(playerId, matchId) => {
+export const clearTimer = async(playerId, matchId) => {
     const { timerKey, timerEventKey } = generateTimerKeys(playerId, matchId);
     
     if (timers.has(timerKey)) {
@@ -75,13 +74,13 @@ export const startGame = async(socket, betData) => {
 export const randomCell = async(socket) => {
     const { playerDetails, game, error } = await getPlayerDetailsAndGame(socket);
     if (error) return logEventAndEmitResponse({ socketId: socket.id }, error, 'bet', socket);
-    clearTimer(playerDetails.id, game.matchId);
+    await clearTimer(playerDetails.id, game.matchId);
     const randomRowColData = getRandomRowCol(game.playerGrid);
     const result = await revealedCells(game, playerDetails, randomRowColData.row, randomRowColData.col, socket);
-    betLogger.info(JSON.stringify({ socketId: socket.id, game, playerDetails, result }));
-    await registerTimer(playerDetails.id, game.matchId, socket);
+    betLogger.info(JSON.stringify({ matchId: game.matchId, playerDetails, result }));
     if(result.error) return emitBetError(socket, result.error);
     if (result.eventName) return socket.emit(result.eventName, result.game || result.cashoutData);
+    await registerTimer(playerDetails.id, game.matchId, socket);
     return socket.emit("revealed_cell", result);
 };
 
@@ -89,43 +88,32 @@ export const revealCell = async(socket, cellData) => {
     const [row, col] = cellData.map(Number);
     const { playerDetails, game, error } = await getPlayerDetailsAndGame(socket);
     if (error) return logEventAndEmitResponse({ socketId: socket.id }, error, 'bet', socket);
-    clearTimer(playerDetails.id, game.matchId);
+    await clearTimer(playerDetails.id, game.matchId);
     const result = await revealedCells(game, playerDetails, row, col, socket);
-    betLogger.info(JSON.stringify({ socketId: socket.id, game, playerDetails, result }));
-    await registerTimer(playerDetails.id, game.matchId, socket);
+    betLogger.info(JSON.stringify({ matchId: game.matchId, playerDetails, result }));
     if (result.error) return emitBetError(socket, result.error);
     if (result.eventName) return socket.emit(result.eventName, result.game || result.cashoutData);
+    await registerTimer(playerDetails.id, game.matchId, socket);
     return socket.emit("revealed_cell", result);
 };
 
 export const cashOut = async(socket) => {
     const { playerDetails, game, error } = await getPlayerDetailsAndGame(socket);
     if (error) return logEventAndEmitResponse({ socketId: socket.id }, error, 'cashout', socket);
-    clearTimer(playerDetails.id, game.matchId);
-    if(Number(game.bank) <= 0) return logEventAndEmitResponse({ socketId: socket.id, game, player: playerDetails }, 'Cashout amount cannot be less than or 0', 'cashout', socket);
+    await clearTimer(playerDetails.id, game.matchId);
+    if(Number(game.bank) <= 0) return logEventAndEmitResponse({ socketId: socket.id, matchId: game.matchId, player: playerDetails }, 'Cashout amount cannot be less than or 0', 'cashout', socket);
     const winData = await cashOutAmount(game, playerDetails, socket);
-    cashoutLogger.info(JSON.stringify({ socketId: socket.id, game, playerDetails, winData }));
+    cashoutLogger.info(JSON.stringify({ socketId: socket.id, matchId: game.matchId, playerDetails, winData }));
     return socket.emit("cash_out_complete", winData);
 };
 
 
 export const disconnect = async(socket) => {
-    await deleteCache(`PL:${socket.id}`);
-    console.log("User disconnected:", socket.id);
-};
-
-export const reconnect = async(socket) => {
     const cachedPlayerDetails = await getCache(`PL:${socket.id}`);
     if(!cachedPlayerDetails) return socket.disconnect(true);
     const playerDetails = JSON.parse(cachedPlayerDetails);
     const cachedGame = await getCache(`GM:${playerDetails.id}`);
-    if(!cachedGame) return;
-    const game = JSON.parse(cachedGame); 
-    cachedGameLogger.info(JSON.stringify({ logId: generateUUIDv7(), playerDetails, game }))
-    socket.emit("game_status", { 
-        matchId: game.matchId,
-        bank: game.bank,
-        revealedCells: game.revealedCells,
-        multiplier: game.multiplier
-    });
-}
+    if(cachedGame) await cashOut(socket);
+    await deleteCache(`PL:${socket.id}`);
+    console.log("User disconnected:", socket.id);
+};
