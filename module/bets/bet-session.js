@@ -41,7 +41,11 @@ export const revealedCells = async (game, playerDetails, row, col, socket) => {
     const playerGrid = game.playerGrid;
     if(!(playerGrid && playerGrid[row][col])) return { error: 'Invalid Row or Column Passed'};
     if(playerGrid[row][col].revealed) return { error: 'Block is already revealed'};
+    game.playerGrid[row][col].revealed = true;
+    game.revealedCells.push(`${row}:${col}`);
+    game.revealedCellCount++;
     if(playerGrid[row][col].isMine){
+        game.matchId = '', game.bank = 0.00, game.multiplier = 0; game.bombPos = `${row}:${col}`
         await deleteCache(`GM:${playerDetails.id}`);
         await insertSettlement({
             roundId: game.matchId,
@@ -53,12 +57,8 @@ export const revealedCells = async (game, playerDetails, row, col, socket) => {
             max_mult: 0.00,
             status: 'LOSS'
         });
-        game.matchId = '', game.bank = 0.00, game.multiplier = 0; game.bombPos = `${row}:${col}`
         return { eventName: 'match_ended',  game};
     } 
-    game.playerGrid[row][col].revealed = true;
-    game.revealedCells.push(`${row}:${col}`);
-    game.revealedCellCount++;
     game.bank = (Number(game.bet) * Number(game.multiplier)).toFixed(2);
     const revealedCountAndMines = countMinesAndRevealed(game.playerGrid);
     if(revealedCountAndMines == (game.playerGrid.length * game.playerGrid[0].length)){
