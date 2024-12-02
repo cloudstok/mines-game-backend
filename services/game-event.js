@@ -66,7 +66,10 @@ export const startGame = async(socket, betData) => {
     const game = await createGameData(matchId, betAmount, mineCount, playerDetails, socket);
     await registerTimer(playerDetails.id, game.matchId, socket);
     gameLogger.info(JSON.stringify({ ...gameLog, game}));
-    if (game.error) return emitBetError(socket, game.error);
+    if (game.error) {
+        await clearTimer(playerDetails.id, game.matchId);
+        return emitBetError(socket, game.error)
+    };
     await setCache(`GM:${playerDetails.id}`, JSON.stringify(game), 3600);
     return socket.emit("game_started", {matchId: game.matchId, bank: game.bank});
 };

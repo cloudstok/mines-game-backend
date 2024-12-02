@@ -25,7 +25,7 @@ export const createGameData = async(matchId, betAmount, mineCount, playerDetails
 
     const gameData = {
         matchId: matchId,
-        lobbyId: Date.now(),
+        bet_id: `BT:${matchId}:${playerDetails.operatorId}:${playerDetails.userId}:${betAmount}:${mineCount}`,
         bank: betAmount,
         bet: betAmount,
         multiplier: getNextMultiplier((mineCount)),
@@ -45,11 +45,9 @@ export const revealedCells = async (game, playerDetails, row, col, socket) => {
     game.revealedCells.push(`${row}:${col}`);
     game.revealedCellCount++; 
     if(playerGrid[row][col].isMine){
-        game.matchId = '', game.bank = 0.00, game.multiplier = 0; game.bombPos = `${row}:${col}`
-        await deleteCache(`GM:${playerDetails.id}`);
         await insertSettlement({
             roundId: game.matchId,
-            matchId: game.lobbyId,
+            bet_id: game.bet_id,
             gameData: JSON.stringify(game),
             userId: playerDetails.userId,
             operatorId: playerDetails.operatorId,
@@ -57,6 +55,8 @@ export const revealedCells = async (game, playerDetails, row, col, socket) => {
             max_mult: 0.00,
             status: 'LOSS'
         });
+        game.matchId = '', game.bank = 0.00, game.multiplier = 0; game.bombPos = `${row}:${col}`
+        await deleteCache(`GM:${playerDetails.id}`);
         return { eventName: 'match_ended',  game};
     };
     game.bank = (Number(game.bet) * Number(game.multiplier)).toFixed(2);
@@ -64,7 +64,8 @@ export const revealedCells = async (game, playerDetails, row, col, socket) => {
     if(revealedCountAndMines == (game.playerGrid.length * game.playerGrid[0].length)){
         const cashoutData = await cashOutAmount(game, playerDetails, socket);
         return { eventName: 'cash_out_complete',  cashoutData};
-    }
+    };
+    game.currentMultiplier = game.multiplier;
     game.multiplier = getNextMultiplier(game.revealedCellCount);
     await setCache(`GM:${playerDetails.id}`, JSON.stringify(game), 3600);
     return { 
@@ -95,12 +96,12 @@ export const cashOutAmount = async (game, playerDetails, socket) => {
     await deleteCache(`GM:${playerDetails.id}`);
     await insertSettlement({
         roundId: game.matchId,
-        matchId: game.lobbyId,
+        bet_id: game.bet_id,
         gameData: JSON.stringify(game),
         userId: playerDetails.userId,
         operatorId: playerDetails.operatorId,
         bet_amount: game.bet,
-        max_mult: game.multiplier,
+        max_mult: game.currentMultiplier,
         status: 'WIN'
     });
     return {

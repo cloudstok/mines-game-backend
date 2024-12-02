@@ -67,6 +67,7 @@ export const sendRequestToAccounts = async(webhookData, token)=> {
 export const prepareDataForWebhook = async(betObj, key) => {
     try {
         let {id, bet_amount, winning_amount, game_id, user_id, txn_id, ip} = betObj;
+        bet_amount = Number(bet_amount).toFixed(2);
         let obj = {
             txn_id: generateUUIDv7(),
             ip,
