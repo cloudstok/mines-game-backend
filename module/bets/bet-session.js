@@ -59,12 +59,15 @@ export const revealedCells = async (game, playerDetails, row, col, socket) => {
         await deleteCache(`GM:${playerDetails.id}`);
         return { eventName: 'match_ended',  game};
     };
-    game.bank = (Number(game.bet) * Number(game.multiplier)).toFixed(2);
     const revealedCountAndMines = countMinesAndRevealed(game.playerGrid);
     if(revealedCountAndMines == (game.playerGrid.length * game.playerGrid[0].length)){
+        game.multiplier = getNextMultiplier(revealedCountAndMines);
+        game.currentMultiplier = game.multiplier;
+        game.bank = (Number(game.bet) * Number(game.multiplier)).toFixed(2);
         const cashoutData = await cashOutAmount(game, playerDetails, socket);
         return { eventName: 'cash_out_complete',  cashoutData};
     };
+    game.bank = (Number(game.bet) * Number(game.multiplier)).toFixed(2);
     game.currentMultiplier = game.multiplier;
     game.multiplier = getNextMultiplier(game.revealedCellCount);
     await setCache(`GM:${playerDetails.id}`, JSON.stringify(game), 3600);

@@ -71,7 +71,7 @@ const defaultData = {
   22: 8.08,
   23: 12.12,
   24: 24.25,
-  25: 29.25,
+  25: 24.25,
 }
 
 export const MinesData = () => {
