@@ -11,9 +11,6 @@ export const loadConfig = async () => {
         if(data.data_key == 'mine_data'){
             variableConfig.mineData = data.value;
         }
-        if(data.data_key == 'board_size'){
-            variableConfig.boardSize = data?.value?.size
-        }
     })
     console.log("DB Variables loaded in cache");
 };

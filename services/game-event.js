@@ -7,7 +7,6 @@ import { getRandomRowCol, logEventAndEmitResponse, MinesData } from "../utilitie
 const gameLogger = createLogger('Game', 'jsonl');
 const betLogger = createLogger('Bets', 'jsonl');
 const cashoutLogger = createLogger('Cashout', 'jsonl');
-const timers = new Map();
 
 const getPlayerDetailsAndGame = async (socket) => {
     const cachedPlayerDetails = await getCache(`PL:${socket.id}`);
@@ -21,41 +20,16 @@ const getPlayerDetailsAndGame = async (socket) => {
     return { playerDetails, game };
 };
 
-const generateTimerKeys = (playerId, matchId) => ({
-    timerKey: `${playerId}-${matchId}`,
-    timerEventKey: `ET-${playerId}-${matchId}`,
-});
-
-const registerTimer = async(playerId, matchId, socket) => {
-    const { timerKey, timerEventKey } = generateTimerKeys(playerId, matchId);
-    const timerEventId = setTimeout(()=> socket.emit('auto_cashout', { timer: 10}), 20 * 1000);
-    const timerId = setTimeout(async() => await cashOut(socket), 30 * 1000);
-    timers.set(timerEventKey, timerEventId);
-    timers.set(timerKey, timerId);
-};
-
-export const clearTimer = async(playerId, matchId) => {
-    const { timerKey, timerEventKey } = generateTimerKeys(playerId, matchId);
-    
-    if (timers.has(timerKey)) {
-        clearTimeout(timers.get(timerKey));
-        timers.delete(timerKey);
-    };
-    if(timers.has(timerEventKey)){
-        clearTimeout(timers.get(timerEventKey));
-        timers.delete(timerEventKey);
-    }
-};
-
 const emitBetError = (socket, error) => socket.emit('betError', error);
 
-export const emitMinesMultiplier = (socket)=> {
-    socket.emit('mines', JSON.stringify(MinesData()));
+export const emitMinesMultiplier = (socket, data)=> {
+    const [number = "3", boardSize = "5"] = data
+    socket.emit('mines', JSON.stringify(MinesData(number, boardSize)));
 }; 
 
 export const startGame = async(socket, betData) => {
-    const [betAmount, mineCount] = betData.map(Number);
-    if(!betAmount || !mineCount) return socket.emit('betError', 'Bet Amount and mine count is missing');
+    const [betAmount, boardSize, mineCount] = betData.map(Number);
+    if(!betAmount || !mineCount || !boardSize) return socket.emit('betError', 'Bet Amount, Board Size and mine count is missing');
     const cachedPlayerDetails = await getCache(`PL:${socket.id}`);
     if(!cachedPlayerDetails) return socket.emit('betError', 'Invalid Player Details');
     const playerDetails = JSON.parse(cachedPlayerDetails);
@@ -63,47 +37,29 @@ export const startGame = async(socket, betData) => {
     if(Number(playerDetails.balance) < betAmount) return logEventAndEmitResponse(gameLog, 'Insufficient Balance', 'game', socket);
     if((betAmount < appConfig.minBetAmount) || (betAmount > appConfig.maxBetAmount)) return logEventAndEmitResponse(gameLog, 'Invalid Bet', 'game', socket);
     const matchId = generateUUIDv7();
-    const game = await createGameData(matchId, betAmount, mineCount, playerDetails, socket);
-    await registerTimer(playerDetails.id, game.matchId, socket);
+    const game = await createGameData(matchId, betAmount, mineCount, boardSize, playerDetails, socket);
     gameLogger.info(JSON.stringify({ ...gameLog, game}));
     if (game.error) {
-        await clearTimer(playerDetails.id, game.matchId);
         return emitBetError(socket, game.error)
     };
     await setCache(`GM:${playerDetails.id}`, JSON.stringify(game), 3600);
     return socket.emit("game_started", {matchId: game.matchId, bank: game.bank});
 };
 
-export const randomCell = async(socket) => {
-    const { playerDetails, game, error } = await getPlayerDetailsAndGame(socket);
-    if (error) return logEventAndEmitResponse({ socketId: socket.id }, error, 'bet', socket);
-    await clearTimer(playerDetails.id, game.matchId);
-    const randomRowColData = getRandomRowCol(game.playerGrid);
-    const result = await revealedCells(game, playerDetails, randomRowColData.row, randomRowColData.col, socket);
-    betLogger.info(JSON.stringify({ matchId: game.matchId, playerDetails, result }));
-    if(result.error) return emitBetError(socket, result.error);
-    if (result.eventName) return socket.emit(result.eventName, result.game || result.cashoutData);
-    await registerTimer(playerDetails.id, game.matchId, socket);
-    return socket.emit("revealed_cell", result);
-};
-
 export const revealCell = async(socket, cellData) => {
     const [row, col] = cellData.map(Number);
     const { playerDetails, game, error } = await getPlayerDetailsAndGame(socket);
     if (error) return logEventAndEmitResponse({ socketId: socket.id }, error, 'bet', socket);
-    await clearTimer(playerDetails.id, game.matchId);
     const result = await revealedCells(game, playerDetails, row, col, socket);
     betLogger.info(JSON.stringify({ matchId: game.matchId, playerDetails, result }));
     if (result.error) return emitBetError(socket, result.error);
     if (result.eventName) return socket.emit(result.eventName, result.game || result.cashoutData);
-    await registerTimer(playerDetails.id, game.matchId, socket);
     return socket.emit("revealed_cell", result);
 };
 
 export const cashOut = async(socket) => {
     const { playerDetails, game, error } = await getPlayerDetailsAndGame(socket);
     if (error) return logEventAndEmitResponse({ socketId: socket.id }, error, 'cashout', socket);
-    await clearTimer(playerDetails.id, game.matchId);
     if(Number(game.bank) <= 0) return logEventAndEmitResponse({ socketId: socket.id, matchId: game.matchId, player: playerDetails }, 'Cashout amount cannot be less than or 0', 'cashout', socket);
     const winData = await cashOutAmount(game, playerDetails, socket);
     cashoutLogger.info(JSON.stringify({ socketId: socket.id, matchId: game.matchId, playerDetails, winData }));
