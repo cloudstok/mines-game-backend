@@ -81,7 +81,7 @@ export const revealedCells = async (game, playerDetails, row, col, socket) => {
         bank: game.bank,
         revealedCells: game.revealedCells,
         multiplier: game.multiplier,
-        nextCashoutAmount: Number(game.multiplier * game.bank).toFixed(2)
+        nextCashoutAmount: Number(game.multiplier * Number(game.bet)).toFixed(2)
     }
 }
 
