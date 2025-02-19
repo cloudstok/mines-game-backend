@@ -63,8 +63,8 @@ export const revealedCells = async (game, playerDetails, row, col, socket) => {
     };
 
     const revealedCountAndMines = countMinesAndRevealed(game.playerGrid);
+
     if(revealedCountAndMines == (game.playerGrid.length * game.playerGrid[0].length)){
-        game.multiplier = getNextMultiplier(revealedCountAndMines, game.boardSize, game.multIndex);
         game.currentMultiplier = game.multiplier;
         game.bank = (Number(game.bet) * Number(game.multiplier)).toFixed(2);
         const cashoutData = await cashOutAmount(game, playerDetails, socket);
