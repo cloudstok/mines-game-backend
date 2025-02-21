@@ -44,8 +44,8 @@ export const revealedCells = async (game, playerDetails, row, col, socket) => {
     if(playerGrid[row][col].revealed) return { error: 'Block is already revealed'};    
     game.playerGrid[row][col].revealed = true;
     game.multIndex++;
-    const color = Number(game.multiplier) <=  2 ? 'B' : Number(game.multiplier) <=  10 ? 'G' : 'Y';
-    game.revealedCells.push(`${row}:${col}`);
+    const color = Number(game.multiplier) <  2 ? 'B' : Number(game.multiplier) <=  10 ? 'G' : 'Y';
+    game.revealedCells.push(`${row}:${col}:${color}`);
     if(playerGrid[row][col].isMine){
         await insertSettlement({
             roundId: game.matchId,
