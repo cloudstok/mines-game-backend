@@ -29,7 +29,8 @@ export const emitMinesMultiplier = (socket, data)=> {
 
 export const startGame = async(socket, betData) => {
     const [betAmount, boardSize, mineCount] = betData.map(Number);
-    if(!betAmount || !mineCount || !boardSize) return socket.emit('betError', 'Bet Amount, Board Size and mine count is missing');
+    if(!betAmount || !mineCount || !boardSize) return socket.emit('betError', 'Bet Amount, Board Size and mine count is missing');    if(mineCount < 1 || betAmount <= 0) return socket.emit('betError', 'Cheat Detected, Bet cannot be placed');
+    if(mineCount < 1 || betAmount <= 0) return socket.emit('betError', 'Cheat Detected, Bet cannot be placed');
     const cachedPlayerDetails = await getCache(`PL:${socket.id}`);
     if(!cachedPlayerDetails) return socket.emit('betError', 'Invalid Player Details');
     const playerDetails = JSON.parse(cachedPlayerDetails);
