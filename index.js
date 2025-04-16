@@ -23,7 +23,7 @@ const startServer = async () => {
         app.use(json());
         initSocket(io);
         app.get('/', (req, res)=> {
-            return res.status(200).send({ status: true, msg: "CricketX Mines game server is up and running"})
+            return res.status(200).send({ status: true, msg: "Cricket Mines game server is up and running"})
         })
 
         server.listen(port, () => { logger.info(`Server listening at PORT ${port}`)});
